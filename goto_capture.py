@@ -18,7 +18,7 @@ import numpy as np
 import cv2
 
 from convert_capture import convert_to_dataset
-from datastructs import Zedpack
+from datastructs import Zedpack, Mm, Meters
 
 
 def connect_arm(ip: str):
@@ -151,7 +151,7 @@ def save_raw_captures(results, save_dir):
         np.save(str(save_dir / f"{pose_name}_{timestamp}_depth.npy"), result['left_depth'])
 
 
-def goto_pose(arm: XArmAPI, x, y, z, roll, pitch, yaw, wait=True):
+def goto_pose(arm: XArmAPI, x: Mm, y: Mm, z: Mm, roll, pitch, yaw, wait=True):
     """
     Move arm to specified Cartesian pose.
     

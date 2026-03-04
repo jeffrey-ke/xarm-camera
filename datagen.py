@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
+import pdb
 from pathlib import Path
 
 import numpy as np
@@ -8,21 +9,23 @@ import tyro
 from convert_capture import convert_to_dataset
 from goto_capture import connect_arm, capture_zed_images, goto_pose, init_zed_camera, fallback, enable_arm
 from pose_utils import generate_offsets, xarmpose_to_se3, visualize_poses, add_rotation, offset_to_4x4
-from datastructs import Capture
+from datastructs import Capture, Mm, Meters, meters_to_mm, mm_to_meters
 
 @dataclass
 class Config:
-    xrange: tuple[float, float] = (300, 500)
-    yrange: tuple[float, float] = (-120, 120)
-    zrange: tuple[float, float] = (20, 50)
+    xrange: tuple[Meters, Meters] = (.300, .500)
+    yrange: tuple[Meters, Meters] = (-0.12, 0.12)
+    zrange: tuple[Meters, Meters] = (0.02, 0.05)
     target_to_ee_ypr: tuple[float, float, float] = (90, 0, -90)
 
     no_kfs: int = 1
-    target_in_base_offset: tuple[float, float, float] = (205+530, 0, -80)
+    target_in_base_offset: tuple[Meters, Meters, Meters] = (.205+.530, 0, -0.080)
     base_to_target_ypr: tuple[float, float, float] = (180, 0, 0)
     ip: str = '192.168.1.241'
-    tcp_origin: tuple[float, float, float] = (0, 0, 65)
+    tcp_origin: tuple[Meters, Meters, Meters] = (0, 0, 0.065)
     tcp_flange_to_tool_euler: tuple[float, float, float] = (90, 0, 90)
+
+    params_in_meters: tuple[str, ...] = ('xrange', 'yrange', 'zrange', 'target_in_base_offset', 'tcp_origin')
 
     dataset_dir: str = '/tmp/test'
     idx: int = 0
@@ -32,7 +35,7 @@ class Config:
 
 def make_index(config): 
     xarm = connect_arm(config.ip)
-    xarm.set_tcp_offset([*config.tcp_origin, *config.tcp_flange_to_tool_euler], is_radian=False)
+    xarm.set_tcp_offset([*map(meters_to_mm, config.tcp_origin), *config.tcp_flange_to_tool_euler], is_radian=False)
     enable_arm(xarm)
     camera = init_zed_camera()
 
@@ -48,7 +51,7 @@ def make_index(config):
     target2base[:3, :3] = R.from_euler('ZYX', config.base_to_target_ypr, degrees=True).as_matrix()
     target2base[:3, -1] = config.target_in_base_offset
     base_frame_poses = target2base @ target_frame_poses
-    visualize_poses(base_frame_poses, extra_frames={'target': target2base})
+    # visualize_poses(base_frame_poses, extra_frames={'target': target2base})
 
     captures = []
     for robot2base in map(xarmpose_to_se3, move_to(xarm, base_frame_poses)):
@@ -69,10 +72,11 @@ def make_index(config):
 def move_to(xarm, poses):
     for pose in poses:
         yaw, pitch, roll = R.from_matrix(pose[:3, :3]).as_euler('ZYX', degrees=True) # need the base to target roll
-        goto_pose(xarm, *pose[:3, -1], roll, pitch, yaw)
-        code, pose = xarm.get_position()
+        pose_mm = list(map(meters_to_mm, pose[:3, -1]))
+        goto_pose(xarm, *pose_mm, roll, pitch, yaw)
+        code, xarmpose = xarm.get_position()
         fallback(xarm) if code != 0 else None
-        yield pose
+        yield xarmpose
 
 
 if __name__ == '__main__':
