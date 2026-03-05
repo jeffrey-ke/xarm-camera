@@ -15,14 +15,14 @@ from datastructs import Capture, Mm, Meters, meters_to_mm, mm_to_meters
 class Config:
     xrange: tuple[Meters, Meters] = (.300, .500)
     yrange: tuple[Meters, Meters] = (-0.12, 0.12)
-    zrange: tuple[Meters, Meters] = (0.02, 0.05)
+    zrange: tuple[Meters, Meters] = (0.02, 0.08)
     target_to_ee_ypr: tuple[float, float, float] = (90, 0, -90)
 
     no_kfs: int = 1
-    target_in_base_offset: tuple[Meters, Meters, Meters] = (.205+.530, 0, -0.080)
+    target_in_base_offset: tuple[Meters, Meters, Meters] = (0.745, 0, -0.116 + 0.093)
     base_to_target_ypr: tuple[float, float, float] = (180, 0, 0)
     ip: str = '192.168.1.241'
-    tcp_origin: tuple[Meters, Meters, Meters] = (0, 0, 0.065)
+    tcp_origin: tuple[Meters, Meters, Meters] = (0, 0, 0.055)
     tcp_flange_to_tool_euler: tuple[float, float, float] = (90, 0, 90)
 
     params_in_meters: tuple[str, ...] = ('xrange', 'yrange', 'zrange', 'target_in_base_offset', 'tcp_origin')
@@ -76,7 +76,8 @@ def move_to(xarm, poses):
         goto_pose(xarm, *pose_mm, roll, pitch, yaw)
         code, xarmpose = xarm.get_position()
         fallback(xarm) if code != 0 else None
-        yield xarmpose
+        pose_meters = [mm_to_meters(mm) for mm in xarmpose[:3]]
+        yield [*pose_meters, *xarmpose[3:]]
 
 
 if __name__ == '__main__':
