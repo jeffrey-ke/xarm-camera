@@ -43,10 +43,13 @@ def write_capture(captures: List[Capture], render_dir: Path) -> None:
     right_dir = render_dir / "gripper_right_rgb"
     depth_dir = render_dir / "gripper_left_depth"
     left_calib_dir = render_dir / "gripper_left_camera_calib_npy"
+    base_pose_dir = render_dir / "gripper_base_pose"
+
     left_dir.mkdir(parents=True, exist_ok=True)
     right_dir.mkdir(parents=True, exist_ok=True)
     depth_dir.mkdir(parents=True, exist_ok=True)
     left_calib_dir.mkdir(parents=True, exist_ok=True)
+    base_pose_dir.mkdir(parents=True, exist_ok=True)
 
     for i, capture in enumerate(captures):
         idx_str = f"{i:04d}"
@@ -54,6 +57,7 @@ def write_capture(captures: List[Capture], render_dir: Path) -> None:
         cv2.imwrite(str(right_dir / f"rgb_{idx_str}.png"), capture.right_image)
         np.save(str(depth_dir / f"distance_to_camera_{idx_str}.npy"), capture.left_depth)
         np.save(left_calib_dir / f"calib_{idx_str}.npy", capture.left_calib)
+        np.save(base_pose_dir / f"se3_pose_{idx_str}.npy", capture.robot2base)
 
 
 def convert_to_dataset(

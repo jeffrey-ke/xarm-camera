@@ -20,6 +20,7 @@ class Zedpack:
 @dataclass
 class Capture:
     offset: np.ndarray
+    robot2base: np.ndarray
     euler_target_to_robot: np.ndarray
     left_image: np.ndarray
     left_depth: np.ndarray

@@ -60,6 +60,7 @@ def make_index(config):
         captures.append(
             Capture(
                 offset=robot2target[:3, -1],
+                robot2base=robot2base,
                 euler_target_to_robot=R.from_matrix(robot2target[:3, :3]).as_euler('ZYX', degrees=True),
                 left_image=zed_pack.left_image,
                 left_depth=zed_pack.left_depth,
