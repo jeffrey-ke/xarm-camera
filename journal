@@ -1,0 +1,19 @@
+Data generation is a program that:
+    - parameterized by ee range
+    - the location of the box relative to the base
+    - the tcp offset of the robot
+
+this is a program that generates data, very much like datagen.py
+takes in ee ranges
+takes in index directory
+etc
+
+That goes in a config
+
+
+Then the robot arm connects and captures images at those poses generated
+
+Then those poses are saved, and then it's saved to the index
+And then because this is the real world data, we can save deltas between
+adjacent images
+and then recommend to the user that shuffling is really not recommended
