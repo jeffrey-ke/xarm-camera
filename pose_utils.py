@@ -6,12 +6,30 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.lines import Line2D
 
+def cv2opengl(pose: np.ndarray) -> np.ndarray:
+    return pose @ np.diag([1.0, -1.0, -1.0, 1.0])
+
 def add_rotation(se3_matrix, z, y, x):
     rotation = R.from_euler('ZYX', [z, y, x], degrees=True).as_matrix()
     mat = se3_matrix.copy()
     mat[:3, :3] = rotation
     return mat
 
+def circular_coordinates(origin: np.ndarray, radius: float, N: int):
+    rad_ticks = np.linspace(0, 2 * np.pi, N, endpoint=False)
+    coords_3d = np.stack((np.cos(rad_ticks), np.sin(rad_ticks), np.zeros_like(rad_ticks)), axis=-1) * radius
+    return coords_3d + origin
+
+def look_at(at_coord: np.ndarray, from_coord: np.ndarray):
+    z_axis = (at_coord - from_coord) / np.linalg.norm(at_coord - from_coord)
+    x_axis = np.cross(z_axis, [0, 0, 1])
+    x_axis = x_axis / np.linalg.norm(x_axis)
+    y_axis = np.cross(z_axis, x_axis)
+    rotation = np.stack((x_axis, y_axis, z_axis), axis=-1)
+    se3 = np.eye(4)
+    se3[:3, :3] = rotation
+    se3[:3, -1] = from_coord
+    return se3
 
 def generate_n_poses_with_rotation(xrange, yrange, zrange, Nx, Ny, Nz, anglez, angley, anglex) -> np.ndarray:
     """
