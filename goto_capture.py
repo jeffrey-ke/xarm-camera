@@ -11,6 +11,8 @@ import time
 import os
 from pathlib import Path
 from datetime import datetime
+from contextlib import contextmanager
+from collections.abc import Iterator
 
 from xarm.wrapper import XArmAPI
 import pyzed.sl as sl
@@ -18,7 +20,7 @@ import numpy as np
 import cv2
 
 from convert_capture import convert_to_dataset
-from datastructs import Zedpack, Mm, Meters
+from datastructs import Zedpack, Mm, Meters, SafeZed
 
 
 def connect_arm(ip: str):
@@ -68,7 +70,6 @@ def test_capture(zed):
 
     capture = capture_zed_images(zed)
     pdb.set_trace()
-    assert capture is not None, "ZED grab failed"
 
     cv2.imwrite(str(path), capture.left_image)
     print(f"✓ Saved {path}  ({capture.left_image.shape})")
@@ -127,28 +128,45 @@ def get_distortion(zed):
 
     return left_D, right_D
 
-def capture_zed_images(zed) -> Zedpack | None:
-    runtime_params = sl.RuntimeParameters()
+@contextmanager
+def grabbed_frame(zed: sl.Camera) -> Iterator[SafeZed]:
+    if not isinstance(zed, sl.Camera):
+        raise TypeError(f"expected sl.Camera, got {type(zed).__name__}")
+    if zed.grab(sl.RuntimeParameters()) != sl.ERROR_CODE.SUCCESS:
+        raise RuntimeError("ZED grab failed")
+    frame = SafeZed(zed)
+    try:
+        yield frame
+    finally:
+        frame._invalidate()
 
-    image_left = sl.Mat()
-    image_right = sl.Mat()
-    depth_map = sl.Mat()
 
-    if zed.grab(runtime_params) != sl.ERROR_CODE.SUCCESS:
-        return None
+def retrieve_stereo_images(frame: SafeZed) -> tuple[np.ndarray, np.ndarray]:
+    assert isinstance(frame, SafeZed), f"expected SafeZed, got {type(frame).__name__}"
+    left, right = sl.Mat(), sl.Mat()
+    frame.retrieve_image(left, sl.VIEW.LEFT)
+    frame.retrieve_image(right, sl.VIEW.RIGHT)
+    return np.array(left.get_data(), copy=True), np.array(right.get_data(), copy=True)
 
-    zed.retrieve_image(image_left, sl.VIEW.LEFT)
-    zed.retrieve_image(image_right, sl.VIEW.RIGHT)
-    zed.retrieve_measure(depth_map, sl.MEASURE.DEPTH)
-    left_K, right_K = get_intrinsics(zed)
 
-    return Zedpack(
-        left_image=np.array(image_left.get_data(), copy=True),
-        left_depth=np.array(depth_map.get_data(), copy=True),
-        right_image=np.array(image_right.get_data(), copy=True),
-        left_K=left_K,
-        right_K=right_K,
-    )
+def retrieve_depth(frame: SafeZed) -> np.ndarray:
+    assert isinstance(frame, SafeZed), f"expected SafeZed, got {type(frame).__name__}"
+    depth = sl.Mat()
+    frame.retrieve_measure(depth, sl.MEASURE.DEPTH)
+    return np.array(depth.get_data(), copy=True)
+
+
+def capture_zed_images(zed) -> Zedpack:
+    with grabbed_frame(zed) as frame:
+        left_image, right_image = retrieve_stereo_images(frame)
+        left_K, right_K = get_intrinsics(zed)
+        return Zedpack(
+            left_image=left_image,
+            left_depth=retrieve_depth(frame),
+            right_image=right_image,
+            left_K=left_K,
+            right_K=right_K,
+        )
 
 
 def save_raw_captures(results, save_dir):
@@ -241,9 +259,6 @@ def capture_at_pose(arm: XArmAPI, zed, x, y, z, roll, pitch, yaw,
     time.sleep(1.0)
 
     capture = capture_zed_images(zed)
-    if capture is None:
-        print("  ✗ Failed to capture images")
-        return None
 
     code, final_pose = arm.get_position()
 
