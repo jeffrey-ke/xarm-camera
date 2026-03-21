@@ -114,6 +114,19 @@ def get_intrinsics(zed):
 
     return left_K, right_K
 
+
+def get_distortion(zed):
+    """Get camera distortion coefficients [k1, k2, p1, p2, k3]."""
+
+    info = zed.get_camera_information()
+    left_calib = info.camera_configuration.calibration_parameters.left_cam
+    right_calib = info.camera_configuration.calibration_parameters.right_cam
+
+    left_D = np.array(left_calib.disto)
+    right_D = np.array(right_calib.disto)
+
+    return left_D, right_D
+
 def capture_zed_images(zed) -> Zedpack | None:
     runtime_params = sl.RuntimeParameters()
 
