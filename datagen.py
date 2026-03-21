@@ -33,42 +33,47 @@ class Config:
     def __post_init__(self):
         assert Path(self.dataset_dir).parent.exists(), f"{self.dataset_dir} doesn't exist!"
 
-def make_index(config): 
-    xarm = connect_arm(config.ip)
-    xarm.set_tcp_offset([*map(meters_to_mm, config.tcp_origin), *config.tcp_flange_to_tool_euler], is_radian=False)
+def plan_poses(target_to_ee_ypr, xrange, yrange, zrange, no_kfs, base_to_target_ypr, target_in_base_offset):
+    yaw, pitch, roll = target_to_ee_ypr
+    target_frame_poses = [
+        add_rotation(offset_to_4x4(offset), z=yaw, y=pitch, x=roll)
+        for offset in generate_offsets(xrange, yrange, zrange, no_kfs)
+    ]
+    target2base = np.eye(4)
+    target2base[:3, :3] = R.from_euler('ZYX', base_to_target_ypr, degrees=True).as_matrix()
+    target2base[:3, -1] = target_in_base_offset
+    base_frame_poses = target2base @ target_frame_poses
+    return base_frame_poses, target2base
+
+def make_capture(robot2base, target2base, zed_pack):
+    robot2target = np.linalg.inv(target2base) @ robot2base
+    return Capture(
+        offset=robot2target[:3, -1],
+        robot2base=robot2base,
+        euler_target_to_robot=R.from_matrix(robot2target[:3, :3]).as_euler('ZYX', degrees=True),
+        left_image=zed_pack.left_image,
+        left_depth=zed_pack.left_depth,
+        right_image=zed_pack.right_image,
+        left_calib=zed_pack.left_K,
+    )
+
+def make_index(ip, tcp_origin, tcp_flange_to_tool_euler,
+               target_to_ee_ypr, xrange, yrange, zrange, no_kfs, base_to_target_ypr, target_in_base_offset,
+               dataset_dir, idx):
+    xarm = connect_arm(ip)
+    xarm.set_tcp_offset([*map(meters_to_mm, tcp_origin), *tcp_flange_to_tool_euler], is_radian=False)
     enable_arm(xarm)
     camera = init_zed_camera()
 
-    yaw, pitch, roll = config.target_to_ee_ypr
-    target_frame_poses = [
-        add_rotation(
-            offset_to_4x4(offset), z=yaw, y=pitch, x=roll
-        )
-        for offset in generate_offsets(config.xrange, config.yrange, config.zrange, config.no_kfs)
+    base_frame_poses, target2base = plan_poses(
+        target_to_ee_ypr, xrange, yrange, zrange, no_kfs, base_to_target_ypr, target_in_base_offset,
+    )
+
+    captures = [
+        make_capture(robot2base, target2base, capture_zed_images(camera))
+        for robot2base in map(xarmpose_to_se3, move_to(xarm, base_frame_poses))
     ]
-
-    target2base = np.eye(4)
-    target2base[:3, :3] = R.from_euler('ZYX', config.base_to_target_ypr, degrees=True).as_matrix()
-    target2base[:3, -1] = config.target_in_base_offset
-    base_frame_poses = target2base @ target_frame_poses
-    # visualize_poses(base_frame_poses, extra_frames={'target': target2base})
-
-    captures = []
-    for robot2base in map(xarmpose_to_se3, move_to(xarm, base_frame_poses)):
-        zed_pack = capture_zed_images(camera)
-        robot2target = np.linalg.inv(target2base) @ robot2base
-        captures.append(
-            Capture(
-                offset=robot2target[:3, -1],
-                robot2base=robot2base,
-                euler_target_to_robot=R.from_matrix(robot2target[:3, :3]).as_euler('ZYX', degrees=True),
-                left_image=zed_pack.left_image,
-                left_depth=zed_pack.left_depth,
-                right_image=zed_pack.right_image,
-                left_calib=zed_pack.left_K
-            )
-        )
-    convert_to_dataset(captures, config.dataset_dir, config.idx)
+    convert_to_dataset(captures, dataset_dir, idx)
 
 def move_to(xarm, poses):
     for pose in poses:
@@ -83,4 +88,9 @@ def move_to(xarm, poses):
 
 if __name__ == '__main__':
     config = tyro.cli(Config)
-    make_index(config)
+    make_index(
+        config.ip, config.tcp_origin, config.tcp_flange_to_tool_euler,
+        config.target_to_ee_ypr, config.xrange, config.yrange, config.zrange,
+        config.no_kfs, config.base_to_target_ypr, config.target_in_base_offset,
+        config.dataset_dir, config.idx,
+    )
