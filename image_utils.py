@@ -1,29 +1,21 @@
 import cv2
 import numpy as np
+import matplotlib
+matplotlib.use('TkAgg')
+import matplotlib.pyplot as plt
 
 
 def pick_point(image_buf: np.ndarray) -> np.ndarray:
-    point = []
-    display = image_buf.copy()
-    window_name = "Click to place a point"
+    is_bgr = len(image_buf.shape) == 3 and image_buf.shape[2] == 3
+    display = cv2.cvtColor(image_buf, cv2.COLOR_BGR2RGB) if is_bgr else image_buf
 
-    def on_click(event, x, y, flags, param):
-        if event != cv2.EVENT_LBUTTONDOWN:
-            return
-        if point:
-            return
-        point.append((x, y))
-        cv2.circle(display, (x, y), 5, (0, 255, 0), -1)
-        cv2.imshow(window_name, display)
+    fig, ax = plt.subplots()
+    ax.imshow(display)
+    ax.set_title("Click to place a point")
 
-    cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
-    cv2.setMouseCallback(window_name, on_click)
-    cv2.imshow(window_name, display)
+    point = plt.ginput(1, timeout=0)
+    plt.close(fig)
 
-    while not point:
-        cv2.waitKey(50)
-
-    cv2.destroyWindow(window_name)
     return np.array(point[0], dtype=np.float64)
 
 

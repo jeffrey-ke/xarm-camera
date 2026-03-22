@@ -11,7 +11,7 @@ from convert_capture import convert_to_dataset
 from goto_capture import connect_arm, capture_zed_images, goto_pose, init_zed_camera, fallback, enable_arm, grabbed_frame, retrieve_stereo_images, get_intrinsics, get_distortion
 from image_utils import annotate
 from pose_utils import generate_offsets, xarmpose_to_se3, visualize_poses, add_rotation, offset_to_4x4, make_se3
-from datastructs import Capture, Mm, Meters, meters_to_mm, mm_to_meters
+from xarm_datastructs import Capture, Mm, Meters, meters_to_mm, mm_to_meters
 
 @dataclass
 class Config:
@@ -41,12 +41,10 @@ class Config:
 
 def plan_poses(target_to_ee_ypr_desired, xrange, yrange, zrange, no_kfs, target2base: np.ndarray):
     yaw, pitch, roll = target_to_ee_ypr_desired
-    #TODO: change target_to_ee_ypr to be so3 and avoid this double conversion
-    # nonsense
-    target_frame_poses = [
+    target_frame_poses = np.array([
         add_rotation(offset_to_4x4(offset), z=yaw, y=pitch, x=roll)
         for offset in generate_offsets(xrange, yrange, zrange, no_kfs)
-    ]
+    ])
     base_frame_poses = target2base @ target_frame_poses
     return base_frame_poses
 
@@ -102,7 +100,7 @@ def move_to(xarm, poses):
 
 
 def datagen_arm_init(
-        target_to_ee_ypr_desired, init_ee_in_target_offset_desired: Meters,
+        target_to_ee_ypr_desired, init_ee_in_target_offset_desired: tuple[Meters, Meters, Meters],
         camera,
         corners_3d_top_left_CCW,
         xarm,

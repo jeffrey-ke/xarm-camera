@@ -20,7 +20,7 @@ import numpy as np
 import cv2
 
 from convert_capture import convert_to_dataset
-from datastructs import Zedpack, Mm, Meters, SafeZed
+from xarm_datastructs import Zedpack, Mm, Meters, SafeZed
 
 
 def connect_arm(ip: str):

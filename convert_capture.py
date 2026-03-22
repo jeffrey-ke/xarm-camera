@@ -19,7 +19,7 @@ from typing import List
 import cv2
 import numpy as np
 
-from datastructs import Capture
+from xarm_datastructs import Capture
 
 
 def build_index(captures: List[Capture]):
@@ -61,7 +61,7 @@ def write_capture(captures: List[Capture], render_dir: Path) -> None:
 
 
 def convert_to_dataset(
-    captures: List[dict],
+    captures: List[Capture],
     dataset_dir: Path | str,
     scene_num: int,
 ) -> Path:
