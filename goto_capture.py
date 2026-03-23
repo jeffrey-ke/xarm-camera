@@ -84,7 +84,7 @@ def init_zed_camera():
     
     # Create configuration parameters
     init_params = sl.InitParameters()
-    init_params.camera_resolution = sl.RESOLUTION.HD720  # 720p
+    init_params.camera_resolution = sl.RESOLUTION.HD1080
     init_params.camera_fps = 30
     init_params.depth_mode = sl.DEPTH_MODE.PERFORMANCE
     init_params.coordinate_units = sl.UNIT.METER
