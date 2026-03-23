@@ -15,13 +15,18 @@ from xarm_datastructs import Capture, Mm, Meters, meters_to_mm, mm_to_meters
 
 @dataclass
 class Config:
-    init_ee_in_target_offset_desired: tuple[Meters, Meters, Meters]
-    corners_3d_top_left_CCW: tuple[tuple[float, float, float], ...]
+    corners_3d_top_left_CCW: tuple[tuple[float, float, float], ...] = (
+        (0, -0.225/2, 0.122),
+        (0, -0.225/2, 0),
+        (0, 0.225/2, 0),
+        (0, 0.225/2, 0.122),
+    )
 
     xrange: tuple[Meters, Meters] = (.300, .500)
     yrange: tuple[Meters, Meters] = (-0.12, 0.12)
     zrange: tuple[Meters, Meters] = (0.02, 0.08)
     target_to_ee_ypr_desired: tuple[float, float, float] = (90, 0, -90)
+    init_ee_in_target_offset_desired: tuple[Meters, Meters, Meters] = (0.2, 0, 0)
 
     no_kfs: int = 1
     target_in_base_offset: tuple[Meters, Meters, Meters] = (0.745, 0, -0.116 + 0.093)
@@ -98,6 +103,19 @@ def move_to(xarm, poses):
         pose_meters = [mm_to_meters(mm) for mm in xarmpose[:3]]
         yield [*pose_meters, *xarmpose[3:]]
 
+
+def dry_run_datagen_arm_init(
+        target_to_ee_ypr_desired, init_ee_in_target_offset_desired: tuple[Meters, Meters, Meters],
+        camera,
+        corners_3d_top_left_CCW,
+        xarm,
+        baseline2left: np.ndarray
+    ):
+    starting_ee2target_desired = make_se3(init_ee_in_target_offset_desired, R.from_euler('ZYX', target_to_ee_ypr_desired, degrees=True).as_matrix())
+    ee2target_current = run_registration(camera, corners_3d_top_left_CCW, baseline2left)
+    target2base = ee2base(xarm) @ np.linalg.inv(ee2target_current)
+    init_pose = target2base @ starting_ee2target_desired
+    return init_pose, target2base
 
 def datagen_arm_init(
         target_to_ee_ypr_desired, init_ee_in_target_offset_desired: tuple[Meters, Meters, Meters],
