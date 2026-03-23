@@ -1,4 +1,5 @@
 import os
+import pdb
 import sys
 sys.path.insert(0, '..')
 
@@ -13,9 +14,12 @@ from scipy.spatial.transform import Rotation as R
 import trimesh
 import imageio
 
-from datagen import plan_poses, pnp_box
+from datagen import plan_poses, pnp_box, dry_run_datagen_arm_init, Config
+from goto_capture import connect_arm, enable_arm, init_zed_camera
+from xarm_datastructs import meters_to_mm
 from pose_utils import make_se3
 import trimesh_wrapper as tw
+import tyro
 
 
 def build_target2base(offset, ypr_degrees):
@@ -98,7 +102,39 @@ def test_box_pnp():
     print(f"Ground truth offset:      {ground_truth}")
     print(f"Difference:               {estimated_translation - ground_truth}")
 
+def test_datagen_dry_run():
+    config = tyro.cli(Config)
+    xarm = connect_arm(config.ip)
+    xarm.set_tcp_offset([*map(meters_to_mm, config.tcp_origin), *config.tcp_flange_to_tool_euler], is_radian=False)
+    enable_arm(xarm)
+    camera = init_zed_camera()
+    baseline2left = np.eye(4)
+    baseline2left[0, 3] = config.baseline / 2
+
+    init_pose, target2base = dry_run_datagen_arm_init(
+        config.target_to_ee_ypr_desired, config.init_ee_in_target_offset_desired,
+        camera,
+        np.array(config.corners_3d_top_left_CCW),
+        xarm,
+        baseline2left,
+    )
+
+    scene = trimesh.Scene()
+    axis = tw.Geometry(trimesh.creation.axis(origin_size=0.004, axis_length=0.04), 'axis')
+
+    base = tw.Node(geometry=axis, name='base_frame')
+    target = tw.Node(geometry=axis, name='target_frame')
+    init_node = tw.Node(geometry=axis, name='init_pose')
+
+    tw.add_node(scene, base)
+    tw.add_node(scene, target, base, transform=target2base)
+    # tw.add_node(scene, init_node, parent=base, transform=init_pose)
+    pdb.set_trace()
+
+    frames = list(orbit_capture(scene, N=60, point_size=10.0))
+    imageio.mimsave('test_dry_run.gif', frames, duration=100, loop=0)
+    print(f'Saved {len(frames)}-frame orbit gif to test_dry_run.gif')
 
 
 if __name__ == '__main__':
-    test_box_pnp()
+    test_datagen_dry_run()
