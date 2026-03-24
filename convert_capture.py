@@ -19,7 +19,7 @@ from typing import List
 import cv2
 import numpy as np
 
-from xarm_datastructs import Capture
+from .xarm_datastructs import Capture
 
 
 def build_index(captures: List[Capture]):

@@ -19,8 +19,8 @@ import pyzed.sl as sl
 import numpy as np
 import cv2
 
-from convert_capture import convert_to_dataset
-from xarm_datastructs import Zedpack, Mm, Meters, SafeZed, meters_to_mm
+from .convert_capture import convert_to_dataset
+from .xarm_datastructs import Zedpack, Mm, Meters, SafeZed, meters_to_mm
 
 
 def connect_arm(ip: str):

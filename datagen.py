@@ -6,13 +6,17 @@ import cv2
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 import tyro
+import trimesh
 
-from convert_capture import convert_to_dataset
-from goto_capture import connect_arm, capture_zed_images, goto_pose, init_zed_camera, fallback, enable_arm, grabbed_frame, retrieve_stereo_images, get_intrinsics, get_distortion, get_baseline, hardware_init
-from image_utils import annotate
-from pose_utils import generate_random_offsets, xarmpose_to_se3, visualize_poses, add_rotation, offset_to_4x4, make_se3
-from xarm_datastructs import Capture, Mm, Meters, meters_to_mm, mm_to_meters
 from eval import draw_coordinate_in_image
+import trimesh_wrapper as tw
+from pose_utils import generate_random_offsets, xarmpose_to_se3, visualize_poses, add_rotation, offset_to_4x4, make_se3
+
+from .convert_capture import convert_to_dataset
+from .goto_capture import connect_arm, capture_zed_images, goto_pose, init_zed_camera, fallback, enable_arm, grabbed_frame, retrieve_stereo_images, get_intrinsics, get_distortion, get_baseline, hardware_init
+from .image_utils import annotate
+from .xarm_datastructs import Capture, Mm, Meters, meters_to_mm, mm_to_meters
+
 
 @dataclass
 class Config:
@@ -54,6 +58,20 @@ def plan_poses(target_to_ee_ypr_desired, xrange, yrange, zrange, no_kfs, target2
     base_frame_poses = target2base @ target_frame_poses
     return base_frame_poses
 
+def poses_to_scene(base_frame_poses: np.ndarray, target2base: np.ndarray) -> trimesh.Scene:
+    scene = trimesh.Scene()
+    axis = tw.Geometry(trimesh.creation.axis(origin_size=0.004, axis_length=0.04), 'axis')
+    base = tw.Node(geometry=axis, name='base_frame')
+    target = tw.Node(geometry=axis, name='target_frame')
+    tw.add_node(scene, base)
+    tw.add_node(scene, target, base, transform=target2base)
+    for i, pose in enumerate(base_frame_poses):
+        tw.add_node(scene, tw.Node(geometry=axis, name=f'pose_{i}'), parent=base, transform=pose)
+
+    tw.ground_plane(scene, z=target2base[2, 3], parent=base)
+
+    return scene
+
 def make_capture(robot2base, target2base, zed_pack):
     robot2target = np.linalg.inv(target2base) @ robot2base
     return Capture(
@@ -85,10 +103,11 @@ def make_index(target_to_ee_ypr_desired: tuple[float, float, float],
                target2base: np.ndarray,
                dataset_dir, idx):
 
-    base_frame_poses = plan_poses(target_to_ee_ypr_desired, xrange, yrange, zrange, no_kfs, target2base
-    )
-    visualize the poses interactively, prompt for valid or invalid
-    on invalid, kill. on valid, continue
+    base_frame_poses = plan_poses(target_to_ee_ypr_desired, xrange, yrange, zrange, no_kfs, target2base)
+
+    poses_to_scene(base_frame_poses, target2base).show()
+    if input("Accept poses? [y/n]: ").strip().lower() != 'y':
+        raise SystemExit("Poses rejected")
 
     captures = [
         make_capture(robot2base, target2base, capture_zed_images(camera))
