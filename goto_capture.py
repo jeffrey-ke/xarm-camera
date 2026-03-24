@@ -20,7 +20,7 @@ import numpy as np
 import cv2
 
 from convert_capture import convert_to_dataset
-from xarm_datastructs import Zedpack, Mm, Meters, SafeZed
+from xarm_datastructs import Zedpack, Mm, Meters, SafeZed, meters_to_mm
 
 
 def connect_arm(ip: str):
@@ -62,6 +62,33 @@ def enable_arm(arm: XArmAPI):
 
     print("✓ Arm enabled")
     return True
+
+
+def hardware_init(ip, tcp_origin, tcp_flange_to_tool_euler):
+    xarm = connect_arm(ip)
+    xarm.set_tcp_offset([*map(meters_to_mm, tcp_origin), *tcp_flange_to_tool_euler], is_radian=False)
+    enable_arm(xarm)
+    camera = init_zed_camera()
+    return xarm, camera
+
+
+def home_rail(arm: XArmAPI, timeout=10):
+    code = arm.set_linear_motor_back_origin(wait=True, auto_enable=True, timeout=timeout)
+    assert code == 0, f"Rail homing failed: {code}"
+    code, on_zero = arm.get_linear_motor_on_zero()
+    assert on_zero == 1, "Rail not at zero after homing"
+    print("✓ Rail homed")
+
+def rail_position(arm: XArmAPI) -> Mm:
+    code, pos = arm.get_linear_motor_pos()
+    assert code == 0, f"get_linear_motor_pos failed: {code}"
+    return pos
+
+def move_rail(arm: XArmAPI, pos_mm: Mm, speed=500, wait=True):
+    code = arm.set_linear_motor_pos(pos_mm, speed=speed, wait=wait)
+    if code != 0:
+        fallback(arm)
+
 
 def test_capture(zed):
     """Grab one frame from a ZED camera and save the left image to a user-specified path."""
@@ -128,8 +155,15 @@ def get_distortion(zed):
 
     return left_D, right_D
 
+
+def get_baseline(zed) -> float:
+    info = zed.get_camera_information()
+    calib = info.camera_configuration.calibration_parameters
+    return calib.get_camera_baseline() / 1000.0
+
+
 @contextmanager
-def grabbed_frame(zed: sl.Camera) -> Iterator[SafeZed]:
+def grabbed_frame(zed) -> Iterator[SafeZed]:
     if not isinstance(zed, sl.Camera):
         raise TypeError(f"expected sl.Camera, got {type(zed).__name__}")
     if zed.grab(sl.RuntimeParameters()) != sl.ERROR_CODE.SUCCESS:
@@ -182,7 +216,7 @@ def save_raw_captures(results, save_dir):
         np.save(str(save_dir / f"{pose_name}_{timestamp}_depth.npy"), result['left_depth'])
 
 
-def goto_pose(arm: XArmAPI, x: Mm, y: Mm, z: Mm, roll, pitch, yaw, wait=True):
+def goto_pose(arm: XArmAPI, x: Mm, y: Mm, z: Mm, roll, pitch, yaw, speed, wait=True):
     """
     Move arm to specified Cartesian pose.
     
@@ -218,7 +252,8 @@ def goto_pose(arm: XArmAPI, x: Mm, y: Mm, z: Mm, roll, pitch, yaw, wait=True):
         x=x, y=y, z=z,
         roll=roll, pitch=pitch, yaw=yaw,
         wait=wait,
-        radius=-1.0
+        radius=-1.0,
+        speed=speed,
     )
     
     if code == 0:
@@ -252,7 +287,7 @@ def capture_at_pose(arm: XArmAPI, zed, x, y, z, roll, pitch, yaw,
     print(f"Pose: {pose_name}")
     print(f"{'='*60}")
 
-    success = goto_pose(arm, x, y, z, roll, pitch, yaw)
+    success = goto_pose(arm, x, y, z, roll, pitch, yaw, speed)
     if not success:
         return None
 

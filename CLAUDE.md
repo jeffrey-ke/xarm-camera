@@ -22,7 +22,7 @@ Requires physical hardware: xArm (via `xarm-python-sdk`) and ZED camera (via `py
 
 `datagen.py` is the orchestrator. It imports pure mechanisms from three modules and sequences them into a data-collection run:
 
-1. **Pose generation** (`pose_utils`): `generate_offsets` produces random xyz positions in the target frame's bounding box. `offset_to_4x4` + `add_rotation` turn each offset into a full SE3 pose (position + fixed end-effector orientation from `Config.target_to_ee_ypr`).
+1. **Pose generation** (`pose_utils`): `generate_random_offsets` produces random xyz positions in the target frame's bounding box. `offset_to_4x4` + `add_rotation` turn each offset into a full SE3 pose (position + fixed end-effector orientation from `Config.target_to_ee_ypr`).
 
 2. **Frame transform**: A `target2base` SE3 matrix is built from `Config.target_in_base_offset` and `Config.base_to_target_ypr`. Batch-multiplying `target2base @ target_frame_poses` brings all poses into the robot's base frame.
 
@@ -73,6 +73,10 @@ dataset_dir/
 ## trimesh & Scene Graph Reference
 
 API docs for `trimesh_wrapper.py` and trimesh library quirks: [`trimesh_wrapper.md`](../trimesh_wrapper.md) in the outer directory.
+
+## ZED SDK Reference
+
+API docs for the ZED Python SDK (pyzed/sl) — rectification, calibration, and ZED Mini specifics: [`zed.md`](zed.md) in this directory.
 
 ## xArm SDK Reference
 

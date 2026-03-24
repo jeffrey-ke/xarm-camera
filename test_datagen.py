@@ -14,8 +14,8 @@ from scipy.spatial.transform import Rotation as R
 import trimesh
 import imageio
 
-from datagen import plan_poses, pnp_box, dry_run_datagen_arm_init, Config
-from goto_capture import connect_arm, enable_arm, init_zed_camera
+from datagen import plan_poses, pnp_box, dry_run_datagen_arm_init, Config, match, homography_inliers, bilinear_sample_3d, move_to_se3, datagen_arm_init, run_registration, sanity_check_gt
+from goto_capture import connect_arm, enable_arm, init_zed_camera, grabbed_frame, retrieve_stereo_images, get_intrinsics, get_baseline, hardware_init
 from xarm_datastructs import meters_to_mm
 from pose_utils import make_se3
 import trimesh_wrapper as tw
@@ -102,14 +102,14 @@ def test_box_pnp():
     print(f"Ground truth offset:      {ground_truth}")
     print(f"Difference:               {estimated_translation - ground_truth}")
 
+def make_euler(target2base):
+    return R.from_matrix(target2base[:3, :3]).as_euler('ZYX', degrees=True)
+
 def test_datagen_dry_run():
     config = tyro.cli(Config)
-    xarm = connect_arm(config.ip)
-    xarm.set_tcp_offset([*map(meters_to_mm, config.tcp_origin), *config.tcp_flange_to_tool_euler], is_radian=False)
-    enable_arm(xarm)
-    camera = init_zed_camera()
+    xarm, camera = hardware_init(config.ip, config.tcp_origin, config.tcp_flange_to_tool_euler)
     baseline2left = np.eye(4)
-    baseline2left[0, 3] = config.baseline / 2
+    baseline2left[0, 3] = get_baseline(camera) / 2
 
     init_pose, target2base = dry_run_datagen_arm_init(
         config.target_to_ee_ypr_desired, config.init_ee_in_target_offset_desired,
@@ -129,12 +129,74 @@ def test_datagen_dry_run():
     tw.add_node(scene, base)
     tw.add_node(scene, target, base, transform=target2base)
     # tw.add_node(scene, init_node, parent=base, transform=init_pose)
-    pdb.set_trace()
 
     frames = list(orbit_capture(scene, N=60, point_size=10.0))
     imageio.mimsave('test_dry_run.gif', frames, duration=100, loop=0)
     print(f'Saved {len(frames)}-frame orbit gif to test_dry_run.gif')
 
+def test_pose_estimation():
+    left = cv2.imread('/home/jeffk/repo/visual_servoing/datasets/real/render/render001/gripper_left_rgb/rgb_0042.png')
+    canonical_image = cv2.imread('/home/jeffk/repo/visual_servoing/xarm_setup/canonical_image.png')
+    left_K = np.load('/home/jeffk/repo/visual_servoing/datasets/real/render/render001/gripper_left_camera_calib_npy/calib_0002.npy')
+
+    four_corners_3d = np.array(Config.corners_3d_top_left_CCW)
+
+    left_coords, right_coords = match(left, canonical_image)
+    left_coords, right_coords, H = homography_inliers(left_coords, right_coords)
+    correspondences_3d = bilinear_sample_3d(right_coords, canonical_image.shape[:-1], four_corners_3d)
+    success, rvec, tvec, inliers = cv2.solvePnPRansac(correspondences_3d, left_coords.astype(np.float64), left_K, np.zeros(4), flags=cv2.SOLVEPNP_IPPE)
+    print(R.from_rotvec(rvec.squeeze()).as_euler('ZYX', degrees=True))
+
+def test_datagen():
+    config = tyro.cli(Config)
+    print(f'[datagen] Auto-registered target frame → desired EE offset in target: {config.init_ee_in_target_offset_desired}')
+    print(f'[datagen] Target-to-EE orientation (yaw, pitch, roll): {config.target_to_ee_ypr_desired} deg')
+    xarm, camera = hardware_init(config.ip, config.tcp_origin, config.tcp_flange_to_tool_euler)
+    baseline2left = np.eye(4)
+    baseline2left[0, 3] = get_baseline(camera) / 2
+
+    print('[datagen] Running automatic target registration via stereo PnP...')
+    init_pose, target2base = datagen_arm_init(
+        config.target_to_ee_ypr_desired, config.init_ee_in_target_offset_desired,
+        camera,
+        np.array(config.corners_3d_top_left_CCW),
+        xarm,
+        baseline2left,
+    )
+    target_pos = target2base[:3, 3]
+    target_euler = R.from_matrix(target2base[:3, :3]).as_euler('ZYX', degrees=True)
+    init_pos = init_pose[:3, 3]
+    print(f'[datagen] Target localized in base frame: pos={target_pos} euler(ZYX)={target_euler}')
+    print(f'[datagen] Computed init pose (base frame): {init_pos}')
+    print('[datagen] Arm moved to init pose — ready for data collection.')
+
+def test_move_se3():
+    config = tyro.cli(Config)
+    xarm = connect_arm(config.ip)
+    # xarm.set_tcp_offset([*map(meters_to_mm, config.tcp_origin), *config.tcp_flange_to_tool_euler], is_radian=False)
+    enable_arm(xarm)
+    pose = np.eye(4)
+    pose[:3, :3] = R.from_euler('ZYX', (-90, 0, -90), degrees=True).as_matrix()
+    pose[:3, -1] = [0.205, 0.0056, 0.0641]
+    pdb.set_trace()
+    move_to_se3(xarm, pose, speed=10)
+
+def test_camera_projection():
+    config = tyro.cli(Config)
+    xarm, camera = hardware_init(config.ip, config.tcp_origin, config.tcp_flange_to_tool_euler)
+    baseline2left = np.eye(4)
+    baseline2left[0, 3] = get_baseline(camera) / 2
+
+    baseline2target = run_registration(camera, np.array(config.corners_3d_top_left_CCW), baseline2left)
+
+    annotated = sanity_check_gt(baseline2target, camera, baseline2left)
+
+    import matplotlib
+    matplotlib.use('TkAgg')
+    import matplotlib.pyplot as plt
+    plt.imshow(cv2.cvtColor(annotated, cv2.COLOR_BGRA2RGB))
+    plt.axis('off')
+    plt.show()
 
 if __name__ == '__main__':
-    test_datagen_dry_run()
+    test_datagen()
