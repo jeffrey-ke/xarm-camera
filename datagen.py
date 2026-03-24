@@ -105,7 +105,10 @@ def make_index(target_to_ee_ypr_desired: tuple[float, float, float],
 
     base_frame_poses = plan_poses(target_to_ee_ypr_desired, xrange, yrange, zrange, no_kfs, target2base)
 
-    poses_to_scene(base_frame_poses, target2base).show()
+    try:
+        poses_to_scene(base_frame_poses, target2base).show()
+    except KeyboardInterrupt:
+        pass
     if input("Accept poses? [y/n]: ").strip().lower() != 'y':
         raise SystemExit("Poses rejected")
 
