@@ -48,6 +48,12 @@ class Config:
 
     def __post_init__(self):
         assert Path(self.dataset_dir).parent.exists(), f"{self.dataset_dir} doesn't exist!"
+        render_dir = Path(self.dataset_dir) / "render" / f"render{self.idx:03d}"
+        if render_dir.exists():
+            raise FileExistsError(
+                f"Scene {self.idx} already exists at {render_dir}. "
+                f"Choose a different idx or delete the existing directory."
+            )
 
 def plan_poses(target_to_ee_ypr_desired, xrange, yrange, zrange, no_kfs, target2base: np.ndarray):
     yaw, pitch, roll = target_to_ee_ypr_desired
