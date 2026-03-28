@@ -116,7 +116,7 @@ def init_zed_camera():
     init_params = sl.InitParameters()
     init_params.camera_resolution = sl.RESOLUTION.HD1080
     init_params.camera_fps = 30
-    init_params.depth_mode = sl.DEPTH_MODE.PERFORMANCE
+    init_params.depth_mode = sl.DEPTH_MODE.NEURAL
     init_params.coordinate_units = sl.UNIT.METER
     
     # Open the camera
@@ -130,12 +130,17 @@ def init_zed_camera():
     return zed
 
 
-def get_intrinsics(zed):
-    """Get camera intrinsic parameters."""
-
+def _calib_params(zed, *, rectified: bool):
     info = zed.get_camera_information()
-    left_calib = info.camera_configuration.calibration_parameters.left_cam
-    right_calib = info.camera_configuration.calibration_parameters.right_cam
+    if rectified:
+        return info.camera_configuration.calibration_parameters
+    return info.camera_configuration.calibration_parameters_raw
+
+
+def get_intrinsics(zed, *, rectified: bool = True):
+    params = _calib_params(zed, rectified=rectified)
+    left_calib = params.left_cam
+    right_calib = params.right_cam
 
     left_K = np.diag([left_calib.fx, left_calib.fy, 1])
     left_K[:2, -1] = [left_calib.cx, left_calib.cy]
@@ -146,15 +151,11 @@ def get_intrinsics(zed):
     return left_K, right_K
 
 
-def get_distortion(zed):
-    """Get camera distortion coefficients [k1, k2, p1, p2, k3]."""
+def get_distortion(zed, *, rectified: bool = True):
+    params = _calib_params(zed, rectified=rectified)
 
-    info = zed.get_camera_information()
-    left_calib = info.camera_configuration.calibration_parameters.left_cam
-    right_calib = info.camera_configuration.calibration_parameters.right_cam
-
-    left_D = np.array(left_calib.disto)
-    right_D = np.array(right_calib.disto)
+    left_D = np.array(params.left_cam.disto)
+    right_D = np.array(params.right_cam.disto)
 
     return left_D, right_D
 
@@ -198,7 +199,7 @@ def retrieve_depth(frame: SafeZed) -> np.ndarray:
 def capture_zed_images(zed, *, rectified: bool = True) -> Zedpack:
     with grabbed_frame(zed) as frame:
         left_image, right_image = retrieve_stereo_images(frame, rectified=rectified)
-        left_K, right_K = get_intrinsics(zed)
+        left_K, right_K = get_intrinsics(zed, rectified=rectified)
         return Zedpack(
             left_image=left_image,
             left_depth=retrieve_depth(frame),
