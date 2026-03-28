@@ -19,8 +19,11 @@ import pyzed.sl as sl
 import numpy as np
 import cv2
 
+from scipy.spatial.transform import Rotation as R
+
+from pose_utils import xarmpose_to_se3
 from .convert_capture import convert_to_dataset
-from .xarm_datastructs import Zedpack, Mm, Meters, SafeZed, meters_to_mm
+from .xarm_datastructs import Zedpack, Mm, Meters, SafeZed, meters_to_mm, mm_to_meters
 
 
 def connect_arm(ip: str):
@@ -105,10 +108,10 @@ def test_capture(zed):
 def init_zed_camera():
     """Initialize ZED camera."""
     print("\nInitializing ZED camera...")
-    
+
     # Create a Camera object
     zed = sl.Camera()
-    
+
     # Create configuration parameters
     init_params = sl.InitParameters()
     init_params.camera_resolution = sl.RESOLUTION.HD1080
@@ -175,11 +178,13 @@ def grabbed_frame(zed) -> Iterator[SafeZed]:
         frame._invalidate()
 
 
-def retrieve_stereo_images(frame: SafeZed) -> tuple[np.ndarray, np.ndarray]:
+def retrieve_stereo_images(frame: SafeZed, *, rectified: bool) -> tuple[np.ndarray, np.ndarray]:
     assert isinstance(frame, SafeZed), f"expected SafeZed, got {type(frame).__name__}"
+    left_view = sl.VIEW.LEFT if rectified else sl.VIEW.LEFT_UNRECTIFIED
+    right_view = sl.VIEW.RIGHT if rectified else sl.VIEW.RIGHT_UNRECTIFIED
     left, right = sl.Mat(), sl.Mat()
-    frame.retrieve_image(left, sl.VIEW.LEFT)
-    frame.retrieve_image(right, sl.VIEW.RIGHT)
+    frame.retrieve_image(left, left_view)
+    frame.retrieve_image(right, right_view)
     return np.array(left.get_data(), copy=True), np.array(right.get_data(), copy=True)
 
 
@@ -190,9 +195,9 @@ def retrieve_depth(frame: SafeZed) -> np.ndarray:
     return np.array(depth.get_data(), copy=True)
 
 
-def capture_zed_images(zed) -> Zedpack:
+def capture_zed_images(zed, *, rectified: bool = True) -> Zedpack:
     with grabbed_frame(zed) as frame:
-        left_image, right_image = retrieve_stereo_images(frame)
+        left_image, right_image = retrieve_stereo_images(frame, rectified=rectified)
         left_K, right_K = get_intrinsics(zed)
         return Zedpack(
             left_image=left_image,
@@ -306,6 +311,26 @@ def capture_at_pose(arm: XArmAPI, zed, x, y, z, roll, pitch, yaw,
         'left_depth': capture.left_depth,
     }
 
+def ee2base(xarm):
+    code, xarmpose = xarm.get_position()
+    assert code == 0, f"get_position failed with code {code}"
+    pose_meters = [mm_to_meters(mm) for mm in xarmpose[:3]]
+    return xarmpose_to_se3([*pose_meters, *xarmpose[3:]])
+
+def move_to(xarm, poses, *, speed=30):
+    for pose in poses:
+        yaw, pitch, roll = R.from_matrix(pose[:3, :3]).as_euler('ZYX', degrees=True) # need the base to target roll
+        pose_mm = list(map(meters_to_mm, pose[:3, -1]))
+        goto_pose(xarm, *pose_mm, roll, pitch, yaw, speed)
+        code, xarmpose = xarm.get_position()
+        fallback(xarm) if code != 0 else None
+        pose_meters = [mm_to_meters(mm) for mm in xarmpose[:3]]
+        yield [*pose_meters, *xarmpose[3:]]
+
+def move_to_se3(xarm, pose: np.ndarray, speed=30):
+    x, y, z = [meters_to_mm(m) for m in pose[:3, 3]]
+    yaw, pitch, roll = R.from_matrix(pose[:3, :3]).as_euler('ZYX', degrees=True)
+    goto_pose(xarm, x, y, z, roll, pitch, yaw, speed)
 
 # def main():
 #     # Configuration
